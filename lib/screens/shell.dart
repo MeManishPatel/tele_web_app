@@ -106,6 +106,8 @@ class _MainAppShellState extends State<MainAppShell> {
         builder: (_) => WithdrawScreen(
           wallet: widget.store.wallet,
           playerName: widget.store.player.displayName,
+          minAmount: widget.store.minWithdrawal,
+          maxAmount: widget.store.maxWithdrawal,
           onWithdrawalSubmitted: widget.store.submitWithdrawal,
           onViewHistory: _openWithdrawalHistory,
         ),

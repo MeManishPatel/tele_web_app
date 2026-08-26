@@ -108,6 +108,10 @@ class Backend {
         onWithdrawals,
     required void Function(List<WalletTransactionItem> txs) onTransactions,
     required void Function(String upiId) onUpi,
+    required void Function({
+      required double minWithdrawal,
+      required double maxWithdrawal,
+    }) onLimits,
   }) async {
     final uid = _client.auth.currentUser?.id;
     if (uid == null) throw BackendException('Not signed in');
@@ -176,6 +180,10 @@ class Backend {
     );
     onTransactions(txs);
     onUpi((settings?['upi_id'] as String?) ?? 'spinwin@upi');
+    onLimits(
+      minWithdrawal: _num(settings?['min_withdrawal'] ?? 100),
+      maxWithdrawal: _num(settings?['max_withdrawal'] ?? 50000),
+    );
   }
 
   static Future<Map<String, dynamic>> spin({
@@ -284,11 +292,38 @@ class Backend {
     required double amount,
     required String upiId,
   }) async {
-    final response = await _client.rpc(
-      'submit_withdrawal',
-      params: {'p_amount': amount, 'p_upi_id': upiId},
-    );
-    return _map(response);
+    try {
+      final response = await _client.rpc(
+        'submit_withdrawal',
+        params: {'p_amount': amount, 'p_upi_id': upiId},
+      );
+      return _map(response);
+    } on PostgrestException catch (error) {
+      throw BackendException(_withdrawalError(error.message));
+    }
+  }
+
+  static String _withdrawalError(String message) {
+    final lower = message.toLowerCase();
+    if (lower.contains('insufficient')) {
+      return 'Not enough withdrawable balance for this payout.';
+    }
+    if (lower.contains('invalid withdrawal amount')) {
+      return 'Amount is outside the allowed withdrawal range.';
+    }
+    if (lower.contains('invalid upi')) {
+      return 'Enter a valid UPI ID such as name@bank.';
+    }
+    if (lower.contains('not authenticated')) {
+      return 'Sign in with Telegram to withdraw.';
+    }
+    if (lower.contains('disabled')) {
+      return 'Withdrawals are temporarily disabled.';
+    }
+    if (lower.contains('wallet_components_consistent')) {
+      return 'Wallet could not hold this payout. Please try again.';
+    }
+    return message;
   }
 
   static Map<String, dynamic> _map(dynamic data) {
@@ -307,7 +342,7 @@ class Backend {
 
     return PlayerWallet(
       id: row['id'] as String,
-      availableBalance: _num(row['balance']),
+      availableBalance: _available(row),
       pendingBalance: _num(row['reserved_balance']),
       totalDeposited: sum(TransactionType.deposit),
       totalWithdrawn: sum(TransactionType.withdrawal),
@@ -394,6 +429,14 @@ class Backend {
 
   static double _num(dynamic value) =>
       value is num ? value.toDouble() : double.tryParse('$value') ?? 0;
+
+  static double _available(Map<String, dynamic> row) {
+    if (row.containsKey('withdrawable_balance') &&
+        row['withdrawable_balance'] != null) {
+      return _num(row['withdrawable_balance']);
+    }
+    return _num(row['balance']);
+  }
 }
 
 class AdminDepositItem {

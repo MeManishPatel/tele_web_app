@@ -23,6 +23,9 @@ migrate_working_dir/
 # is commented out by default.
 #.vscode/
 
+# Supabase CLI temp
+supabase/.temp/
+
 # Secrets — never commit tokens or database passwords
 .env
 .env.*

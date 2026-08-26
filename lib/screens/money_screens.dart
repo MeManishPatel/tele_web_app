@@ -249,6 +249,8 @@ class _DepositScreenState extends State<DepositScreen> {
 class WithdrawScreen extends StatefulWidget {
   final PlayerWallet wallet;
   final String playerName;
+  final double minAmount;
+  final double maxAmount;
   final Future<void> Function(WithdrawalRequestItem withdrawal)
       onWithdrawalSubmitted;
   final VoidCallback onViewHistory;
@@ -257,6 +259,8 @@ class WithdrawScreen extends StatefulWidget {
     super.key,
     required this.wallet,
     required this.playerName,
+    this.minAmount = 100,
+    this.maxAmount = 50000,
     required this.onWithdrawalSubmitted,
     required this.onViewHistory,
   });
@@ -266,8 +270,21 @@ class WithdrawScreen extends StatefulWidget {
 }
 
 class _WithdrawScreenState extends State<WithdrawScreen> {
-  final _amountController = TextEditingController(text: '300');
+  late final TextEditingController _amountController;
   final _upiController = TextEditingController();
+  bool _isSubmitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final available = widget.wallet.availableBalance;
+    final suggested = available >= 300
+        ? 300.0
+        : available.floorToDouble();
+    _amountController = TextEditingController(
+      text: suggested >= widget.minAmount ? suggested.toStringAsFixed(0) : '',
+    );
+  }
 
   @override
   void dispose() {
@@ -277,21 +294,33 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
   }
 
   Future<void> _submit() async {
-    final amount = double.tryParse(_amountController.text) ?? 0;
+    if (_isSubmitting) return;
+    final amount = double.tryParse(_amountController.text.trim()) ?? 0;
     final upi = _upiController.text.trim();
     if (upi.isEmpty || !upi.contains('@')) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a valid UPI VPA.')),
+        const SnackBar(content: Text('Enter a valid UPI ID such as name@bank.')),
       );
       return;
     }
-    if (amount <= 0 || amount > widget.wallet.availableBalance) {
+    if (amount < widget.minAmount || amount > widget.maxAmount) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Insufficient balance.')),
+        SnackBar(
+          content: Text(
+            'Enter an amount between ₹${widget.minAmount.toStringAsFixed(0)} and ₹${widget.maxAmount.toStringAsFixed(0)}.',
+          ),
+        ),
+      );
+      return;
+    }
+    if (amount > widget.wallet.availableBalance) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Insufficient withdrawable balance.')),
       );
       return;
     }
 
+    setState(() => _isSubmitting = true);
     try {
       await widget.onWithdrawalSubmitted(
         WithdrawalRequestItem(
@@ -305,12 +334,14 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
       );
     } catch (error) {
       if (!mounted) return;
+      setState(() => _isSubmitting = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('$error')),
       );
       return;
     }
     if (!mounted) return;
+    setState(() => _isSubmitting = false);
     Navigator.pop(context);
     widget.onViewHistory();
   }
@@ -326,23 +357,55 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
           16,
           TelegramScope.of(context).chromePadding.bottom +
               MediaQuery.viewInsetsOf(context).bottom +
-              16,
+              32,
         ),
         children: [
           GlassCard(
-            child: Row(
+            child: Column(
               children: [
-                const Expanded(
-                  child: Text(
-                    'Available',
-                    style: TextStyle(color: AppColors.textSecondary),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Withdrawable',
+                        style: TextStyle(color: AppColors.textSecondary),
+                      ),
+                    ),
+                    AmountText(
+                      amount: widget.wallet.availableBalance,
+                      fontSize: 18,
+                    ),
+                  ],
+                ),
+                if (widget.wallet.pendingBalance > 0) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Pending payout',
+                          style: TextStyle(color: AppColors.textSecondary),
+                        ),
+                      ),
+                      Text(
+                        '₹ ${widget.wallet.pendingBalance.toStringAsFixed(0)}',
+                        style: const TextStyle(
+                          color: AppColors.warning,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                AmountText(
-                  amount: widget.wallet.availableBalance,
-                  fontSize: 18,
-                ),
+                ],
               ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Minimum ₹${widget.minAmount.toStringAsFixed(0)} · Maximum ₹${widget.maxAmount.toStringAsFixed(0)}',
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.textTertiary,
             ),
           ),
           const SizedBox(height: 14),
@@ -354,13 +417,17 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
           const SizedBox(height: 12),
           TextField(
             controller: _upiController,
+            keyboardType: TextInputType.emailAddress,
             decoration: tgInputDecoration(
-              'Beneficiary UPI VPA',
+              'Beneficiary UPI ID',
               hint: 'name@bank',
             ),
           ),
           const SizedBox(height: 16),
-          GoldButton(label: 'Request Payout', onPressed: _submit),
+          GoldButton(
+            label: _isSubmitting ? 'Submitting...' : 'Request Payout',
+            onPressed: _isSubmitting ? null : _submit,
+          ),
         ],
       ),
     );

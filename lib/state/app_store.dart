@@ -19,6 +19,8 @@ class AppStore extends ChangeNotifier {
   late AppPlayer player;
   late PlayerWallet wallet;
   String upiId = 'spinwin@upi';
+  double minWithdrawal = 100;
+  double maxWithdrawal = 50000;
   bool isLive = false;
   bool isReady = true;
   AuthStatus authStatus = AuthStatus.unknown;
@@ -167,6 +169,10 @@ class AppStore extends ChangeNotifier {
           ..addAll(value);
       },
       onUpi: (value) => upiId = value,
+      onLimits: ({required minWithdrawal, required maxWithdrawal}) {
+        this.minWithdrawal = minWithdrawal;
+        this.maxWithdrawal = maxWithdrawal;
+      },
     );
   }
 
@@ -185,7 +191,10 @@ class AppStore extends ChangeNotifier {
         ? Map<String, dynamic>.from(result['wallet'] as Map)
         : null;
     if (walletRow != null) {
-      wallet.availableBalance = _num(walletRow['balance']);
+      wallet.availableBalance = walletRow.containsKey('withdrawable_balance') &&
+              walletRow['withdrawable_balance'] != null
+          ? _num(walletRow['withdrawable_balance'])
+          : _num(walletRow['balance']);
       wallet.pendingBalance = _num(walletRow['reserved_balance']);
     }
 

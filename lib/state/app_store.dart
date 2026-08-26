@@ -227,6 +227,9 @@ class AppStore extends ChangeNotifier {
         'Sign in with Telegram to submit a deposit.',
       );
     }
+    if (amount < 300) {
+      throw BackendException('Minimum deposit is ₹300.');
+    }
     if (receiptBytes == null || receiptBytes.isEmpty) {
       throw BackendException('Upload a payment receipt photo.');
     }

@@ -30,7 +30,164 @@ class DepositScreen extends StatefulWidget {
 }
 
 class _DepositScreenState extends State<DepositScreen> {
-  final _amountController = TextEditingController(text: '500');
+  static const _presets = [300, 500, 750, 1000, 2000, 5000, 10000];
+  static const _minAmount = 300.0;
+
+  final _customController = TextEditingController();
+  int? _preset = 500;
+
+  @override
+  void dispose() {
+    _customController.dispose();
+    super.dispose();
+  }
+
+  double? get _amount {
+    final custom = double.tryParse(_customController.text.trim());
+    if (custom != null) return custom;
+    final preset = _preset;
+    if (preset != null) return preset.toDouble();
+    return null;
+  }
+
+  void _selectPreset(int value) {
+    TelegramBridge.instance.hapticSelection();
+    setState(() {
+      _preset = value;
+      _customController.clear();
+    });
+  }
+
+  void _continue() {
+    final amount = _amount;
+    if (amount == null || amount < _minAmount) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Select a pack or enter at least ₹300.'),
+        ),
+      );
+      return;
+    }
+    TelegramBridge.instance.hapticImpact('medium');
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DepositPaymentScreen(
+          amount: amount,
+          upiId: widget.upiId,
+          onDepositSubmitted: widget.onDepositSubmitted,
+          onViewHistory: widget.onViewHistory,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = _amount;
+    return TgSubScaffold(
+      title: 'Deposit Coins',
+      body: ListView(
+        padding: EdgeInsets.fromLTRB(
+          16,
+          12,
+          16,
+          TelegramScope.of(context).chromePadding.bottom +
+              MediaQuery.viewInsetsOf(context).bottom +
+              24,
+        ),
+        children: [
+          const Text(
+            'Select deposit amount',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Choose a pack or enter a custom amount. Minimum ₹300.',
+            style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _presets.map((value) {
+              final isSelected =
+                  _customController.text.trim().isEmpty && _preset == value;
+              return _AmountChip(
+                label: '₹$value',
+                selected: isSelected,
+                onTap: () => _selectPreset(value),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _customController,
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            decoration: tgInputDecoration(
+              'Custom amount (min ₹300)',
+              hint: '300',
+            ),
+            onChanged: (value) => setState(() {
+              _preset = value.trim().isEmpty ? 500 : null;
+            }),
+          ),
+          const SizedBox(height: 16),
+          GlassCard(
+            goldBorder: true,
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'You will pay',
+                    style: TextStyle(color: AppColors.textSecondary),
+                  ),
+                ),
+                AmountText(
+                  amount: selected != null && selected >= _minAmount
+                      ? selected
+                      : 0,
+                  fontSize: 22,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          GoldButton(
+            label: 'Continue to Payment',
+            icon: Icons.arrow_forward_rounded,
+            onPressed: _continue,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class DepositPaymentScreen extends StatefulWidget {
+  final double amount;
+  final String upiId;
+  final Future<void> Function({
+    required double amount,
+    required String utr,
+    Uint8List? receiptBytes,
+    String? receiptName,
+  }) onDepositSubmitted;
+  final VoidCallback onViewHistory;
+
+  const DepositPaymentScreen({
+    super.key,
+    required this.amount,
+    required this.upiId,
+    required this.onDepositSubmitted,
+    required this.onViewHistory,
+  });
+
+  @override
+  State<DepositPaymentScreen> createState() => _DepositPaymentScreenState();
+}
+
+class _DepositPaymentScreenState extends State<DepositPaymentScreen> {
   final _utrController = TextEditingController();
   final _picker = ImagePicker();
   bool _isSubmitting = false;
@@ -40,7 +197,6 @@ class _DepositScreenState extends State<DepositScreen> {
 
   @override
   void dispose() {
-    _amountController.dispose();
     _utrController.dispose();
     super.dispose();
   }
@@ -60,6 +216,7 @@ class _DepositScreenState extends State<DepositScreen> {
   }
 
   Future<void> _submit() async {
+    if (_isSubmitting) return;
     if (_utrController.text.trim().length < 12) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please enter a 12-digit UTR.')),
@@ -76,7 +233,7 @@ class _DepositScreenState extends State<DepositScreen> {
     setState(() => _isSubmitting = true);
     try {
       await widget.onDepositSubmitted(
-        amount: double.tryParse(_amountController.text) ?? 500,
+        amount: widget.amount,
         utr: _utrController.text.trim(),
         receiptBytes: _receiptBytes,
         receiptName: _receiptName,
@@ -90,15 +247,17 @@ class _DepositScreenState extends State<DepositScreen> {
       return;
     }
     if (!mounted) return;
-    setState(() => _isSubmitting = false);
-    Navigator.pop(context);
+    final nav = Navigator.of(context);
+    nav.pop();
+    nav.pop();
     widget.onViewHistory();
   }
 
   @override
   Widget build(BuildContext context) {
+    final upi = widget.upiId.isEmpty ? _upiIdFallback : widget.upiId;
     return TgSubScaffold(
-      title: 'Deposit Coins (UPI)',
+      title: 'Payment Info',
       body: ListView(
         padding: EdgeInsets.fromLTRB(
           16,
@@ -106,7 +265,7 @@ class _DepositScreenState extends State<DepositScreen> {
           16,
           TelegramScope.of(context).chromePadding.bottom +
               MediaQuery.viewInsetsOf(context).bottom +
-              16,
+              24,
         ),
         children: [
           GlassCard(
@@ -114,6 +273,18 @@ class _DepositScreenState extends State<DepositScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                const Text(
+                  'PAY EXACTLY',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textTertiary,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                AmountText(amount: widget.amount, fontSize: 28),
+                const SizedBox(height: 14),
                 const Text(
                   'Pay to this UPI ID',
                   style: TextStyle(
@@ -127,7 +298,7 @@ class _DepositScreenState extends State<DepositScreen> {
                   children: [
                     Expanded(
                       child: Text(
-                        widget.upiId.isEmpty ? _upiIdFallback : widget.upiId,
+                        upi,
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -137,10 +308,7 @@ class _DepositScreenState extends State<DepositScreen> {
                     ),
                     IconButton(
                       onPressed: () async {
-                        final value = widget.upiId.isEmpty
-                            ? _upiIdFallback
-                            : widget.upiId;
-                        await Clipboard.setData(ClipboardData(text: value));
+                        await Clipboard.setData(ClipboardData(text: upi));
                         TelegramBridge.instance.hapticSelection();
                         if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -160,15 +328,10 @@ class _DepositScreenState extends State<DepositScreen> {
           ),
           const SizedBox(height: 14),
           TextField(
-            controller: _amountController,
-            keyboardType: TextInputType.number,
-            decoration: tgInputDecoration('Amount (₹)'),
-          ),
-          const SizedBox(height: 12),
-          TextField(
             controller: _utrController,
             maxLength: 12,
             keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             decoration: tgInputDecoration('12-Digit Bank UTR'),
           ),
           const SizedBox(height: 12),
@@ -241,6 +404,48 @@ class _DepositScreenState extends State<DepositScreen> {
             onPressed: _isSubmitting ? null : _submit,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _AmountChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _AmountChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: selected ? AppColors.goldHover : AppColors.surfaceElevated,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? AppColors.primaryGold : AppColors.glassBorder,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: selected
+                  ? AppColors.primaryGoldBright
+                  : AppColors.textPrimary,
+            ),
+          ),
+        ),
       ),
     );
   }

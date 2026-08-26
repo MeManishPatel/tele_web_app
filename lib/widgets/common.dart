@@ -57,6 +57,46 @@ class GlassCard extends StatelessWidget {
   }
 }
 
+class PlayerAvatar extends StatelessWidget {
+  final String initial;
+  final String? photoUrl;
+  final double radius;
+
+  const PlayerAvatar({
+    super.key,
+    required this.initial,
+    this.photoUrl,
+    this.radius = 20,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final fallback = CircleAvatar(
+      radius: radius,
+      backgroundColor: AppColors.primaryGold,
+      child: Text(
+        initial,
+        style: TextStyle(
+          color: Colors.black,
+          fontWeight: FontWeight.bold,
+          fontSize: radius * 0.8,
+        ),
+      ),
+    );
+    final url = photoUrl;
+    if (url == null || url.isEmpty) return fallback;
+    return ClipOval(
+      child: Image.network(
+        url,
+        width: radius * 2,
+        height: radius * 2,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => fallback,
+      ),
+    );
+  }
+}
+
 class GoldButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;

@@ -93,6 +93,7 @@ Deno.serve(async (req) => {
           username: tgUser.username,
           first_name: tgUser.first_name,
           last_name: tgUser.last_name,
+          photo_url: tgUser.photo_url,
         },
       });
     } else {
@@ -104,12 +105,30 @@ Deno.serve(async (req) => {
           username: tgUser.username,
           first_name: tgUser.first_name,
           last_name: tgUser.last_name,
+          photo_url: tgUser.photo_url,
         },
       });
       if (created.error || !created.data.user) {
-        return json({ error: created.error?.message ?? "auth create failed" }, 500);
+        const listed = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+        const found = listed.data.users.find((u) =>
+          u.email === email || Number(u.user_metadata?.telegram_id) === tgUser.id
+        );
+        if (!found) {
+          return json({ error: created.error?.message ?? "auth create failed" }, 500);
+        }
+        authUserId = found.id;
+        await admin.auth.admin.updateUserById(authUserId, {
+          user_metadata: {
+            telegram_id: tgUser.id,
+            username: tgUser.username,
+            first_name: tgUser.first_name,
+            last_name: tgUser.last_name,
+            photo_url: tgUser.photo_url,
+          },
+        });
+      } else {
+        authUserId = created.data.user.id;
       }
-      authUserId = created.data.user.id;
     }
 
     const profile = {

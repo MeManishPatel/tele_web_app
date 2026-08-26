@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
-enum AccountStatus { active, suspended, blocked }
+enum AuthStatus { unknown, signedOut, authenticating, signedIn, failed }
+
+enum AccountStatus { active, suspended }
 
 enum DepositStatus { pending, approved, rejected }
 
@@ -21,6 +23,7 @@ class AppPlayer {
   final String firstName;
   final String? lastName;
   final String? username;
+  final String? photoUrl;
   final AccountStatus status;
 
   const AppPlayer({
@@ -29,6 +32,7 @@ class AppPlayer {
     required this.firstName,
     this.lastName,
     this.username,
+    this.photoUrl,
     required this.status,
   });
 

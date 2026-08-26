@@ -6,12 +6,14 @@ class TelegramUserRaw {
   final String firstName;
   final String? lastName;
   final String? username;
+  final String? photoUrl;
 
   const TelegramUserRaw({
     required this.id,
     required this.firstName,
     this.lastName,
     this.username,
+    this.photoUrl,
   });
 
   static const preview = TelegramUserRaw(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/config/app_config.dart';
 import '../core/layout.dart';
 import '../core/telegram/telegram_bridge.dart';
 import '../core/telegram_access.dart';
@@ -12,6 +13,7 @@ import 'home_screen.dart';
 import 'money_screens.dart';
 import 'profile_screen.dart';
 import 'spin_screen.dart';
+import 'telegram_login_screen.dart';
 import 'telegram_only_screen.dart';
 import 'wallet_screen.dart';
 
@@ -31,7 +33,21 @@ class _MainAppShellState extends State<MainAppShell> {
     setState(() => _index = index);
   }
 
+  bool get _walletLocked =>
+      TelegramAccess.requiresTelegram && !widget.store.isSignedIn;
+
+  void _showSignInRequired() {
+    TelegramBridge.instance.hapticNotification('warning');
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Sign in with Telegram to continue.')),
+    );
+  }
+
   Future<void> _openSpin() async {
+    if (_walletLocked) {
+      _showSignInRequired();
+      return;
+    }
     TelegramBridge.instance.hapticImpact('medium');
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -54,6 +70,10 @@ class _MainAppShellState extends State<MainAppShell> {
   }
 
   void _openDeposit() {
+    if (_walletLocked) {
+      _showSignInRequired();
+      return;
+    }
     TelegramBridge.instance.hapticImpact('medium');
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -76,6 +96,10 @@ class _MainAppShellState extends State<MainAppShell> {
   }
 
   void _openWithdraw() {
+    if (_walletLocked) {
+      _showSignInRequired();
+      return;
+    }
     TelegramBridge.instance.hapticImpact('medium');
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -105,6 +129,7 @@ class _MainAppShellState extends State<MainAppShell> {
       HomeScreen(
         player: widget.store.player,
         wallet: widget.store.wallet,
+        telegramSignedIn: widget.store.isSignedIn,
         onNavigateToTab: _goToTab,
         onOpenSpin: _openSpin,
         onOpenDeposit: _openDeposit,
@@ -123,6 +148,8 @@ class _MainAppShellState extends State<MainAppShell> {
         player: widget.store.player,
         wallet: widget.store.wallet,
         totalSpins: widget.store.gameHistory.length,
+        signedIn: widget.store.isSignedIn,
+        onSignOut: widget.store.signOut,
       ),
     ];
 
@@ -177,12 +204,24 @@ class _TelegramSpinWinAppState extends State<TelegramSpinWinApp> {
     _store.bootstrap();
   }
 
+  @override
+  void dispose() {
+    _store.dispose();
+    super.dispose();
+  }
+
   Widget get _home {
     if (TelegramAccess.isAdminRoute) {
       return const AdminPanelScreen();
     }
     if (TelegramAccess.requiresTelegram && !TelegramAccess.isInsideTelegram) {
       return const TelegramOnlyScreen();
+    }
+    if (TelegramAccess.requiresTelegram && !AppConfig.supabaseReady) {
+      return BackendUnavailableScreen(
+        message: _store.backendMessage ??
+            'Could not start the wallet backend.',
+      );
     }
     if (TelegramAccess.requiresTelegram && !_store.isReady) {
       return const Scaffold(
@@ -192,11 +231,8 @@ class _TelegramSpinWinAppState extends State<TelegramSpinWinApp> {
         ),
       );
     }
-    if (TelegramAccess.requiresTelegram && !_store.isLive) {
-      return BackendUnavailableScreen(
-        message: _store.backendMessage ??
-            'Could not connect your Telegram account.',
-      );
+    if (TelegramAccess.requiresTelegram && !_store.isSignedIn) {
+      return TelegramLoginScreen(store: _store);
     }
     return MainAppShell(store: _store);
   }

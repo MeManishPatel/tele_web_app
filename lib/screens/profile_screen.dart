@@ -11,12 +11,16 @@ class ProfileScreen extends StatelessWidget {
   final AppPlayer player;
   final PlayerWallet wallet;
   final int totalSpins;
+  final bool signedIn;
+  final Future<void> Function()? onSignOut;
 
   const ProfileScreen({
     super.key,
     required this.player,
     required this.wallet,
     required this.totalSpins,
+    this.signedIn = false,
+    this.onSignOut,
   });
 
   @override
@@ -34,17 +38,10 @@ class ProfileScreen extends StatelessWidget {
           gradient: AppColors.cardGradient,
           child: Row(
             children: [
-              CircleAvatar(
+              PlayerAvatar(
+                initial: player.initial,
+                photoUrl: player.photoUrl,
                 radius: 26,
-                backgroundColor: AppColors.primaryGold,
-                child: Text(
-                  player.initial,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black,
-                  ),
-                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -65,10 +62,12 @@ class ProfileScreen extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 6),
-                        const Icon(
+                        Icon(
                           Icons.verified,
                           size: 16,
-                          color: AppColors.primaryGold,
+                          color: signedIn
+                              ? AppColors.primaryGold
+                              : AppColors.textTertiary,
                         ),
                       ],
                     ),
@@ -84,7 +83,9 @@ class ProfileScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Telegram ID: ${player.telegramId}',
+                      signedIn
+                          ? 'Telegram ID: ${player.telegramId} · connected'
+                          : 'Telegram ID: ${player.telegramId}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -178,11 +179,50 @@ class ProfileScreen extends StatelessWidget {
                 subtitle: '18+ strict eligibility & self-exclusion',
                 onTap: () => _showPolicy(context),
               ),
+              if (signedIn && onSignOut != null) ...[
+                const Divider(color: AppColors.glassBorder, height: 1),
+                _MenuTile(
+                  icon: Icons.logout_rounded,
+                  title: 'Sign out of Telegram',
+                  subtitle: 'Disconnect this Mini App session',
+                  onTap: () => _confirmSignOut(context),
+                ),
+              ],
             ],
           ),
         ),
       ],
     );
+  }
+
+  Future<void> _confirmSignOut(BuildContext context) async {
+    TelegramBridge.instance.hapticImpact('light');
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Sign out?'),
+        content: const Text(
+          'You will need to continue with Telegram again to use your wallet, spin, deposit, or withdraw.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Stay signed in'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(
+              'Sign out',
+              style: TextStyle(color: AppColors.error),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await onSignOut?.call();
+    }
   }
 
   void _showSupport(BuildContext context) {

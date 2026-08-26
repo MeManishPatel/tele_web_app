@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/config/app_config.dart';
 import '../core/telegram/telegram_bridge.dart';
@@ -12,12 +14,19 @@ class AppStore extends ChangeNotifier {
     _loadPreview(user ?? TelegramBridge.instance.user);
   }
 
+  StreamSubscription<AuthState>? _authSub;
+
   late AppPlayer player;
   late PlayerWallet wallet;
   String upiId = 'spinwin@upi';
   bool isLive = false;
   bool isReady = true;
+  AuthStatus authStatus = AuthStatus.unknown;
   String? backendMessage;
+
+  bool get isSignedIn => authStatus == AuthStatus.signedIn && isLive;
+
+  bool get canUseLiveWallet => isSignedIn;
 
   final List<GameRoundItem> gameHistory = [];
   final List<DepositRequestItem> deposits = [];
@@ -26,31 +35,111 @@ class AppStore extends ChangeNotifier {
 
   Future<void> bootstrap() async {
     final initData = TelegramBridge.instance.initData;
-    if (!AppConfig.supabaseReady || initData.isEmpty) {
+    final telegramUser = TelegramBridge.instance.user;
+
+    if (!AppConfig.supabaseReady) {
+      authStatus = AuthStatus.failed;
       isLive = false;
       isReady = true;
-      backendMessage = initData.isEmpty
-          ? 'This Mini App can only be opened from Telegram.'
-          : 'Supabase is not initialized.';
+      backendMessage = 'Supabase is not initialized.';
       notifyListeners();
       return;
     }
 
+    if (initData.isEmpty) {
+      authStatus = AuthStatus.signedOut;
+      isLive = false;
+      isReady = true;
+      backendMessage = 'This Mini App can only be opened from Telegram.';
+      notifyListeners();
+      return;
+    }
+
+    _listenAuthChanges();
+    authStatus = AuthStatus.authenticating;
     isReady = false;
+    notifyListeners();
+
+    try {
+      final restored = await Backend.restoreTelegramSession(telegramUser.id);
+      if (restored) {
+        await _reloadAccount();
+        authStatus = AuthStatus.signedIn;
+        isLive = true;
+        backendMessage = null;
+        isReady = true;
+        notifyListeners();
+        return;
+      }
+      authStatus = AuthStatus.signedOut;
+      isLive = false;
+      backendMessage = null;
+    } catch (error) {
+      authStatus = AuthStatus.failed;
+      isLive = false;
+      backendMessage = '$error';
+      debugPrint('Telegram session restore failed: $error');
+    }
+    isReady = true;
+    notifyListeners();
+  }
+
+  void _listenAuthChanges() {
+    if (_authSub != null || !AppConfig.supabaseReady) return;
+    _authSub = AppConfig.client.auth.onAuthStateChange.listen((data) {
+      if (data.session != null || !isSignedIn) return;
+      _loadPreview(TelegramBridge.instance.user);
+      authStatus = AuthStatus.signedOut;
+      isLive = false;
+      backendMessage = null;
+      notifyListeners();
+    });
+  }
+
+  Future<void> signInWithTelegram() async {
+    final initData = TelegramBridge.instance.initData;
+    if (initData.isEmpty) {
+      throw BackendException('Open this Mini App from Telegram to sign in.');
+    }
+    authStatus = AuthStatus.authenticating;
+    backendMessage = null;
     notifyListeners();
     try {
       await Backend.authenticateWithTelegram(initData);
       await _reloadAccount();
+      authStatus = AuthStatus.signedIn;
       isLive = true;
       backendMessage = null;
     } catch (error) {
+      authStatus = AuthStatus.failed;
       isLive = false;
-      backendMessage =
-          'Could not connect your Telegram account to the wallet. $error';
-      debugPrint('Supabase bootstrap failed: $error');
+      backendMessage = '$error';
+      rethrow;
+    } finally {
+      isReady = true;
+      notifyListeners();
     }
-    isReady = true;
+  }
+
+  Future<void> signOut() async {
+    try {
+      if (AppConfig.supabaseReady) {
+        await Backend.signOut();
+      }
+    } catch (error) {
+      debugPrint('Sign-out failed: $error');
+    }
+    _loadPreview(TelegramBridge.instance.user);
+    authStatus = AuthStatus.signedOut;
+    isLive = false;
+    backendMessage = null;
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _reloadAccount() async {
@@ -82,7 +171,7 @@ class AppStore extends ChangeNotifier {
   }
 
   Future<GameRoundItem> playSpin(double stake) async {
-    if (!isLive) {
+    if (!isSignedIn) {
       final round = _localSpin(stake);
       recordGameRound(round);
       return round;
@@ -124,9 +213,9 @@ class AppStore extends ChangeNotifier {
     Uint8List? receiptBytes,
     String? receiptName,
   }) async {
-    if (!isLive) {
+    if (!isSignedIn) {
       throw BackendException(
-        'Deposits are only accepted from the Telegram Mini App.',
+        'Sign in with Telegram to submit a deposit.',
       );
     }
     if (receiptBytes == null || receiptBytes.isEmpty) {
@@ -147,9 +236,8 @@ class AppStore extends ChangeNotifier {
   }
 
   Future<void> submitWithdrawal(WithdrawalRequestItem withdrawal) async {
-    if (!isLive) {
-      addWithdrawal(withdrawal);
-      return;
+    if (!isSignedIn) {
+      throw BackendException('Sign in with Telegram to withdraw.');
     }
     await Backend.submitWithdrawal(
       amount: withdrawal.amount,
@@ -227,6 +315,7 @@ class AppStore extends ChangeNotifier {
       firstName: user.firstName,
       lastName: user.lastName,
       username: user.username,
+      photoUrl: user.photoUrl,
       status: AccountStatus.active,
     );
     wallet = PlayerWallet(

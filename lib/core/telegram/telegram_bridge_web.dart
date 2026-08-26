@@ -9,12 +9,14 @@ class TelegramUserRaw {
   final String firstName;
   final String? lastName;
   final String? username;
+  final String? photoUrl;
 
   const TelegramUserRaw({
     required this.id,
     required this.firstName,
     this.lastName,
     this.username,
+    this.photoUrl,
   });
 
   static const preview = TelegramUserRaw(
@@ -283,6 +285,7 @@ class TelegramBridge extends ChangeNotifier {
         firstName: firstName.isEmpty ? 'Player' : firstName,
         lastName: _readOptString(user, 'last_name'),
         username: _readOptString(user, 'username'),
+        photoUrl: _readOptString(user, 'photo_url'),
       );
     } catch (_) {
       return TelegramUserRaw.preview;

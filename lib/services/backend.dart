@@ -20,21 +20,84 @@ class Backend {
   static SupabaseClient get _client => AppConfig.client;
 
   static Future<void> authenticateWithTelegram(String initData) async {
-    final response = await _client.functions.invoke(
-      'telegram-auth',
-      body: {'initData': initData},
-    );
-    final data = _map(response.data);
-    final error = data['error'] as String?;
-    if (response.status != 200 || error != null) {
-      throw BackendException(error ?? 'Telegram auth failed');
+    try {
+      final response = await _client.functions.invoke(
+        'telegram-auth',
+        body: {'initData': initData},
+      );
+      final data = _map(response.data);
+      final error = data['error'] as String?;
+      if (response.status == 404) {
+        throw BackendException(
+          'Telegram login is not deployed yet. Run ./scripts/deploy_backend.sh',
+        );
+      }
+      if (response.status != 200 || error != null) {
+        throw BackendException(error ?? 'Telegram sign-in failed');
+      }
+      final refresh = data['refresh_token'] as String?;
+      if (refresh == null || refresh.isEmpty) {
+        throw BackendException('Session missing from Telegram sign-in');
+      }
+      await _client.auth.setSession(refresh);
+      if (_client.auth.currentUser == null) {
+        throw BackendException('Could not establish a signed-in session');
+      }
+    } on BackendException {
+      rethrow;
+    } on FunctionException catch (error) {
+      throw BackendException(_functionError(error));
     }
-    final refresh = data['refresh_token'] as String?;
-    if (refresh == null || refresh.isEmpty) {
-      throw BackendException('Session missing from auth response');
-    }
-    await _client.auth.setSession(refresh);
   }
+
+  static String _functionError(FunctionException error) {
+    final details = error.details;
+    if (details is Map) {
+      final mapped = details['error'] ?? details['message'];
+      if (mapped is String && mapped.isNotEmpty) return mapped;
+    }
+    if (details is String && details.isNotEmpty) return details;
+    if (error.reasonPhrase != null && error.reasonPhrase!.isNotEmpty) {
+      return error.reasonPhrase!;
+    }
+    return 'Telegram sign-in is unavailable';
+  }
+
+  static Future<bool> restoreTelegramSession(int telegramId) async {
+    final session = _client.auth.currentSession;
+    final user = session?.user;
+    if (session == null || user == null) return false;
+    final metaId = user.userMetadata?['telegram_id'];
+    if (metaId != null && metaId.toString() != telegramId.toString()) {
+      await _client.auth.signOut();
+      return false;
+    }
+    try {
+      final row = await _client
+          .from('users')
+          .select('telegram_id')
+          .eq('id', user.id)
+          .maybeSingle();
+      if (row == null) {
+        await _client.auth.signOut();
+        return false;
+      }
+      if (row['telegram_id']?.toString() != telegramId.toString()) {
+        await _client.auth.signOut();
+        return false;
+      }
+      return true;
+    } catch (_) {
+      await _client.auth.signOut();
+      return false;
+    }
+  }
+
+  static Future<void> signOut() async {
+    await _client.auth.signOut();
+  }
+
+  static bool get hasSession => _client.auth.currentSession != null;
 
   static Future<void> loadAccount({
     required void Function(AppPlayer player) onPlayer,
@@ -89,6 +152,7 @@ class Backend {
         firstName: (userRow['first_name'] as String?) ?? 'Player',
         lastName: userRow['last_name'] as String?,
         username: userRow['username'] as String?,
+        photoUrl: userRow['photo_url'] as String?,
         status: (userRow['is_active'] as bool? ?? true)
             ? AccountStatus.active
             : AccountStatus.suspended,

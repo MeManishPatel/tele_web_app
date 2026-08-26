@@ -13,6 +13,7 @@ class HomeScreen extends StatelessWidget {
   final VoidCallback onOpenSpin;
   final VoidCallback onOpenDeposit;
   final VoidCallback onOpenWithdraw;
+  final bool telegramSignedIn;
 
   const HomeScreen({
     super.key,
@@ -22,6 +23,7 @@ class HomeScreen extends StatelessWidget {
     required this.onOpenSpin,
     required this.onOpenDeposit,
     required this.onOpenWithdraw,
+    this.telegramSignedIn = false,
   });
 
   @override
@@ -32,6 +34,7 @@ class HomeScreen extends StatelessWidget {
         _Header(
           player: player,
           wallet: wallet,
+          signedIn: telegramSignedIn,
           onWalletTap: () => onNavigateToTab(2),
         ),
         const SizedBox(height: 16),
@@ -212,11 +215,13 @@ class HomeScreen extends StatelessWidget {
 class _Header extends StatelessWidget {
   final AppPlayer player;
   final PlayerWallet wallet;
+  final bool signedIn;
   final VoidCallback onWalletTap;
 
   const _Header({
     required this.player,
     required this.wallet,
+    required this.signedIn,
     required this.onWalletTap,
   });
 
@@ -224,17 +229,10 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        CircleAvatar(
+        PlayerAvatar(
+          initial: player.initial,
+          photoUrl: player.photoUrl,
           radius: 20,
-          backgroundColor: AppColors.primaryGold,
-          child: Text(
-            player.initial,
-            style: const TextStyle(
-              color: Colors.black,
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-            ),
-          ),
         ),
         const SizedBox(width: 10),
         Expanded(
@@ -259,6 +257,17 @@ class _Header extends StatelessWidget {
                   color: AppColors.textTertiary,
                 ),
               ),
+              if (signedIn)
+                const Text(
+                  'Telegram signed in',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.success,
+                  ),
+                ),
             ],
           ),
         ),

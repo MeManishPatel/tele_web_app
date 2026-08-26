@@ -1,0 +1,16 @@
+project_id = "wjkoykwxemprfujbcozr"
+
+[api]
+enabled = true
+
+[functions.telegram-auth]
+verify_jwt = false
+
+[functions.spin]
+verify_jwt = true
+
+[functions.submit-deposit]
+verify_jwt = true
+
+[functions.submit-withdrawal]
+verify_jwt = true

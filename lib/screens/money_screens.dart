@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../core/layout.dart';
 import '../core/telegram/telegram_bridge.dart';
@@ -9,7 +10,12 @@ import '../widgets/common.dart';
 
 class DepositScreen extends StatefulWidget {
   final String upiId;
-  final Future<void> Function(DepositRequestItem deposit) onDepositSubmitted;
+  final Future<void> Function({
+    required double amount,
+    required String utr,
+    Uint8List? receiptBytes,
+    String? receiptName,
+  }) onDepositSubmitted;
   final VoidCallback onViewHistory;
 
   const DepositScreen({
@@ -26,7 +32,10 @@ class DepositScreen extends StatefulWidget {
 class _DepositScreenState extends State<DepositScreen> {
   final _amountController = TextEditingController(text: '500');
   final _utrController = TextEditingController();
+  final _picker = ImagePicker();
   bool _isSubmitting = false;
+  Uint8List? _receiptBytes;
+  String? _receiptName;
   static const _upiIdFallback = 'spinwin@upi';
 
   @override
@@ -36,6 +45,20 @@ class _DepositScreenState extends State<DepositScreen> {
     super.dispose();
   }
 
+  Future<void> _pickReceipt() async {
+    final file = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+      maxWidth: 1600,
+    );
+    if (file == null) return;
+    final bytes = await file.readAsBytes();
+    setState(() {
+      _receiptBytes = bytes;
+      _receiptName = file.name;
+    });
+  }
+
   Future<void> _submit() async {
     if (_utrController.text.trim().length < 12) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -43,17 +66,20 @@ class _DepositScreenState extends State<DepositScreen> {
       );
       return;
     }
+    if (_receiptBytes == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Upload a payment receipt photo.')),
+      );
+      return;
+    }
 
     setState(() => _isSubmitting = true);
     try {
       await widget.onDepositSubmitted(
-        DepositRequestItem(
-          id: 'dep_${DateTime.now().millisecondsSinceEpoch}',
-          amount: double.tryParse(_amountController.text) ?? 500,
-          utr: _utrController.text.trim(),
-          status: DepositStatus.pending,
-          createdAt: DateTime.now(),
-        ),
+        amount: double.tryParse(_amountController.text) ?? 500,
+        utr: _utrController.text.trim(),
+        receiptBytes: _receiptBytes,
+        receiptName: _receiptName,
       );
     } catch (error) {
       if (!mounted) return;
@@ -144,6 +170,70 @@ class _DepositScreenState extends State<DepositScreen> {
             maxLength: 12,
             keyboardType: TextInputType.number,
             decoration: tgInputDecoration('12-Digit Bank UTR'),
+          ),
+          const SizedBox(height: 12),
+          GlassCard(
+            onTap: _pickReceipt,
+            child: _receiptBytes == null
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.photo_camera_back_outlined,
+                          color: AppColors.primaryGold,
+                        ),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Payment receipt photo',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                'Tap to upload UPI screenshot',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(
+                          Icons.add_photo_alternate_outlined,
+                          color: AppColors.textTertiary,
+                        ),
+                      ],
+                    ),
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.memory(
+                          _receiptBytes!,
+                          height: 160,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _receiptName ?? 'Receipt selected',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
           ),
           const SizedBox(height: 16),
           GoldButton(
@@ -320,6 +410,19 @@ class DepositHistoryScreen extends StatelessWidget {
                                 color: AppColors.textSecondary,
                               ),
                             ),
+                            if (item.screenshotUrl != null) ...[
+                              const SizedBox(height: 8),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.network(
+                                  item.screenshotUrl!,
+                                  height: 72,
+                                  width: 72,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),

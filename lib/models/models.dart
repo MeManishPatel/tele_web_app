@@ -101,6 +101,7 @@ class DepositRequestItem {
   final String utr;
   final DepositStatus status;
   final DateTime createdAt;
+  final String? screenshotUrl;
 
   const DepositRequestItem({
     required this.id,
@@ -108,6 +109,7 @@ class DepositRequestItem {
     required this.utr,
     required this.status,
     required this.createdAt,
+    this.screenshotUrl,
   });
 }
 

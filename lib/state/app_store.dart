@@ -30,12 +30,14 @@ class AppStore extends ChangeNotifier {
       isLive = false;
       isReady = true;
       backendMessage = initData.isEmpty
-          ? 'Preview mode — open inside Telegram to use the live wallet.'
+          ? 'This Mini App can only be opened from Telegram.'
           : 'Supabase is not initialized.';
       notifyListeners();
       return;
     }
 
+    isReady = false;
+    notifyListeners();
     try {
       await Backend.authenticateWithTelegram(initData);
       await _reloadAccount();
@@ -43,7 +45,8 @@ class AppStore extends ChangeNotifier {
       backendMessage = null;
     } catch (error) {
       isLive = false;
-      backendMessage = 'Live backend unavailable, using preview. $error';
+      backendMessage =
+          'Could not connect your Telegram account to the wallet. $error';
       debugPrint('Supabase bootstrap failed: $error');
     }
     isReady = true;
@@ -115,12 +118,30 @@ class AppStore extends ChangeNotifier {
     return round;
   }
 
-  Future<void> submitDeposit(DepositRequestItem deposit) async {
+  Future<void> submitDeposit({
+    required double amount,
+    required String utr,
+    Uint8List? receiptBytes,
+    String? receiptName,
+  }) async {
     if (!isLive) {
-      addDeposit(deposit);
-      return;
+      throw BackendException(
+        'Deposits are only accepted from the Telegram Mini App.',
+      );
     }
-    await Backend.submitDeposit(amount: deposit.amount, utr: deposit.utr);
+    if (receiptBytes == null || receiptBytes.isEmpty) {
+      throw BackendException('Upload a payment receipt photo.');
+    }
+    final uploaded = await Backend.uploadReceipt(
+      bytes: receiptBytes,
+      filename: receiptName ?? 'receipt.jpg',
+    );
+    await Backend.submitDeposit(
+      amount: amount,
+      utr: utr,
+      screenshotPath: uploaded.path,
+      screenshotUrl: uploaded.url,
+    );
     await _reloadAccount();
     notifyListeners();
   }

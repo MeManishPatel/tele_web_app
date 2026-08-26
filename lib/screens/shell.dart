@@ -2,14 +2,17 @@ import 'package:flutter/material.dart';
 
 import '../core/layout.dart';
 import '../core/telegram/telegram_bridge.dart';
+import '../core/telegram_access.dart';
 import '../core/theme.dart';
 import '../state/app_store.dart';
 import '../widgets/bottom_nav.dart';
+import 'admin_panel_screen.dart';
 import 'games_screen.dart';
 import 'home_screen.dart';
 import 'money_screens.dart';
 import 'profile_screen.dart';
 import 'spin_screen.dart';
+import 'telegram_only_screen.dart';
 import 'wallet_screen.dart';
 
 class MainAppShell extends StatefulWidget {
@@ -174,6 +177,30 @@ class _TelegramSpinWinAppState extends State<TelegramSpinWinApp> {
     _store.bootstrap();
   }
 
+  Widget get _home {
+    if (TelegramAccess.isAdminRoute) {
+      return const AdminPanelScreen();
+    }
+    if (TelegramAccess.requiresTelegram && !TelegramAccess.isInsideTelegram) {
+      return const TelegramOnlyScreen();
+    }
+    if (TelegramAccess.requiresTelegram && !_store.isReady) {
+      return const Scaffold(
+        backgroundColor: AppColors.background,
+        body: Center(
+          child: CircularProgressIndicator(color: AppColors.primaryGold),
+        ),
+      );
+    }
+    if (TelegramAccess.requiresTelegram && !_store.isLive) {
+      return BackendUnavailableScreen(
+        message: _store.backendMessage ??
+            'Could not connect your Telegram account.',
+      );
+    }
+    return MainAppShell(store: _store);
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -198,7 +225,7 @@ class _TelegramSpinWinAppState extends State<TelegramSpinWinApp> {
               ),
             );
           },
-          home: MainAppShell(store: _store),
+          home: _home,
         );
       },
     );

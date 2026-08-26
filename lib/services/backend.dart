@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -127,12 +128,92 @@ class Backend {
   static Future<Map<String, dynamic>> submitDeposit({
     required double amount,
     required String utr,
+    String? screenshotPath,
+    String? screenshotUrl,
   }) async {
-    final response = await _client.rpc(
-      'submit_deposit',
-      params: {'p_amount': amount, 'p_utr': utr},
-    );
-    return _map(response);
+    try {
+      final response = await _client.rpc(
+        'submit_deposit',
+        params: {
+          'p_amount': amount,
+          'p_utr': utr,
+          'p_screenshot_path': screenshotPath,
+          'p_screenshot_url': screenshotUrl,
+        },
+      );
+      return _map(response);
+    } on PostgrestException catch (error) {
+      throw BackendException(error.message);
+    }
+  }
+
+  static Future<({String path, String url})> uploadReceipt({
+    required Uint8List bytes,
+    required String filename,
+  }) async {
+    final uid = _client.auth.currentUser?.id;
+    if (uid == null) throw BackendException('Not signed in');
+    final ext = filename.split('.').last.toLowerCase();
+    final safeExt =
+        ['jpg', 'jpeg', 'png', 'webp', 'heic'].contains(ext) ? ext : 'jpg';
+    final path = '$uid/${DateTime.now().millisecondsSinceEpoch}.$safeExt';
+    final contentType = switch (safeExt) {
+      'png' => 'image/png',
+      'webp' => 'image/webp',
+      'heic' => 'image/heic',
+      _ => 'image/jpeg',
+    };
+    await _client.storage.from('payment-screenshots').uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(contentType: contentType, upsert: false),
+        );
+    final url = await _client.storage
+        .from('payment-screenshots')
+        .createSignedUrl(path, 60 * 60 * 24 * 30);
+    return (path: path, url: url);
+  }
+
+  static Future<List<AdminDepositItem>> adminListDeposits(String code) async {
+    try {
+      final response = await _client.rpc(
+        'admin_list_deposits',
+        params: {'p_code': code},
+      );
+      if (response is List) {
+        return response
+            .map(
+              (row) => AdminDepositItem.fromJson(
+                Map<String, dynamic>.from(row as Map),
+              ),
+            )
+            .toList();
+      }
+      throw BackendException('Could not load admin deposits');
+    } on PostgrestException catch (error) {
+      throw BackendException(error.message);
+    }
+  }
+
+  static Future<void> adminReviewDeposit({
+    required String code,
+    required String depositId,
+    required bool approve,
+    String? note,
+  }) async {
+    try {
+      await _client.rpc(
+        'admin_review_deposit',
+        params: {
+          'p_code': code,
+          'p_deposit_id': depositId,
+          'p_approve': approve,
+          'p_note': note,
+        },
+      );
+    } on PostgrestException catch (error) {
+      throw BackendException(error.message);
+    }
   }
 
   static Future<Map<String, dynamic>> submitWithdrawal({
@@ -198,6 +279,7 @@ class Backend {
       },
       createdAt: DateTime.tryParse(row['submitted_at'] as String? ?? '') ??
           DateTime.now(),
+      screenshotUrl: row['screenshot_url'] as String?,
     );
   }
 
@@ -248,6 +330,62 @@ class Backend {
 
   static double _num(dynamic value) =>
       value is num ? value.toDouble() : double.tryParse('$value') ?? 0;
+}
+
+class AdminDepositItem {
+  final String id;
+  final double amount;
+  final String utr;
+  final String status;
+  final String? screenshotUrl;
+  final DateTime submittedAt;
+  final String? firstName;
+  final String? lastName;
+  final String? username;
+  final int? telegramId;
+
+  const AdminDepositItem({
+    required this.id,
+    required this.amount,
+    required this.utr,
+    required this.status,
+    required this.submittedAt,
+    this.screenshotUrl,
+    this.firstName,
+    this.lastName,
+    this.username,
+    this.telegramId,
+  });
+
+  factory AdminDepositItem.fromJson(Map<String, dynamic> row) {
+    return AdminDepositItem(
+      id: '${row['id']}',
+      amount: row['amount'] is num
+          ? (row['amount'] as num).toDouble()
+          : double.tryParse('${row['amount']}') ?? 0,
+      utr: (row['utr_number'] as String?) ?? '',
+      status: (row['status'] as String?) ?? 'pending',
+      screenshotUrl: row['screenshot_url'] as String?,
+      submittedAt: DateTime.tryParse(row['submitted_at'] as String? ?? '') ??
+          DateTime.now(),
+      firstName: row['first_name'] as String?,
+      lastName: row['last_name'] as String?,
+      username: row['username'] as String?,
+      telegramId: row['telegram_id'] is num
+          ? (row['telegram_id'] as num).toInt()
+          : int.tryParse('${row['telegram_id']}'),
+    );
+  }
+
+  String get playerLabel {
+    final name = [firstName, lastName]
+        .whereType<String>()
+        .where((value) => value.trim().isNotEmpty)
+        .join(' ');
+    if (name.isNotEmpty) return name;
+    if (username != null && username!.isNotEmpty) return '@$username';
+    return 'Player';
+  }
 }
 
 String newRequestId() {

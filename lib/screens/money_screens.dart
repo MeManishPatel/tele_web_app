@@ -327,6 +327,52 @@ class _DepositPaymentScreenState extends State<DepositPaymentScreen> {
             ),
           ),
           const SizedBox(height: 14),
+          GlassCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'How to deposit',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _DepositStep(
+                  number: '1',
+                  text: 'Copy the UPI ID above.',
+                ),
+                _DepositStep(
+                  number: '2',
+                  text:
+                      'Pay exactly ₹${widget.amount.toStringAsFixed(0)} from your UPI app. Do not change the amount.',
+                ),
+                const _DepositStep(
+                  number: '3',
+                  text: 'Copy the 12-digit UTR / UPI reference from the payment success screen.',
+                ),
+                const _DepositStep(
+                  number: '4',
+                  text: 'Upload a screenshot of the payment receipt.',
+                ),
+                const _DepositStep(
+                  number: '5',
+                  text: 'Paste the UTR below and tap Submit Deposit Slip.',
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Coins are credited after admin approval.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primaryGoldBright,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
           TextField(
             controller: _utrController,
             maxLength: 12,
@@ -402,6 +448,53 @@ class _DepositPaymentScreenState extends State<DepositPaymentScreen> {
           GoldButton(
             label: _isSubmitting ? 'Submitting...' : 'Submit Deposit Slip',
             onPressed: _isSubmitting ? null : _submit,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DepositStep extends StatelessWidget {
+  final String number;
+  final String text;
+
+  const _DepositStep({required this.number, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 22,
+            height: 22,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              color: AppColors.goldHover,
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              number,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: AppColors.primaryGoldBright,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontSize: 13,
+                height: 1.35,
+                color: AppColors.textSecondary,
+              ),
+            ),
           ),
         ],
       ),
